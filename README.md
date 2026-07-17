@@ -1,6 +1,6 @@
-## Language Selector
+## Language Selector Neo
 
-#### This Repo is a Fork version:
+#### This Repo is a Fork version of [Language Selector](https://github.com/VegaBobo/Language-Selector) with changes below:
 
 **All the code is vibe coding with using Codex**
 - Improve the seaching experience
