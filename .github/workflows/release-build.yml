@@ -40,10 +40,10 @@ jobs:
       - name: Set up Android SDK (cmdline-tools)
         uses: android-actions/setup-android@v4
 
-      - name: Install platform-tools, platform 37, build-tools 36.0.0
+      - name: Install platform-tools, platform 37.0, build-tools 36.0.0
         run: |
           yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-37" "build-tools;36.0.0"
+          sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;36.0.0"
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
