@@ -5,6 +5,8 @@
 Language Selector Neo is useful on Android 13+ ROMs that still include Android's per-app language service, but do not provide a complete settings UI for it.
 
 > Forked from [VegaBobo/Language-Selector](https://github.com/VegaBobo/Language-Selector), with a focus on speed, clarity, Traditional Chinese support, and safer automated dependency maintenance.
+> 
+> All code changes in this fork were vibe-coded with Codex.
 
 <div align="center">
   <img src="src/preview_1.jpg" alt="Language Selector Neo app list" width="220" />
