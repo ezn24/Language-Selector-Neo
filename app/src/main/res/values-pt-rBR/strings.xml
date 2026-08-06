@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Language Selector</string>
+    <string name="app_name">Language Selector Neo</string>
     <string name="app_language">Idioma do app</string>
     <string name="system_default">Padrão do sistema</string>
     <string name="user_languages">Idiomas do usuário:</string>

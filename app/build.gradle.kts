@@ -8,14 +8,14 @@ plugins {
 
 android {
     namespace = "vegabobo.languageselector"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
-        applicationId = "vegabobo.languageselector"
+        applicationId = "io.github.ezn24.languageselector"
         minSdk = 33
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.04"
+        versionCode = 110
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

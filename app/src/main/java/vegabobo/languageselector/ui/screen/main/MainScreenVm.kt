@@ -1,6 +1,7 @@
 package vegabobo.languageselector.ui.screen.main
 
 import android.app.Application
+import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import androidx.lifecycle.ViewModel
@@ -27,12 +28,18 @@ import javax.inject.Inject
 @HiltViewModel
 class MainScreenVm @Inject constructor(
     val app: Application,
-    appInfoDb: AppInfoDb
+    appInfoDb: AppInfoDb,
+    private val sharedPreferences: SharedPreferences
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow(MainScreenState())
+    private val _uiState = MutableStateFlow(
+        MainScreenState(
+            isShowSystemAppsHome = sharedPreferences.getBoolean(PREF_SHOW_SYSTEM_APPS_HOME, false)
+        )
+    )
     val uiState: StateFlow<MainScreenState> = _uiState.asStateFlow()
     var lastSelectedApp: AppInfo? = null
     val dao = appInfoDb.appInfoDao()
+    private var localeScanJob: Job? = null
 
     fun getIndexFromAppInfoItem(): Int {
         return _uiState.value.listOfApps.indexOfFirst { it.pkg == lastSelectedApp?.pkg }
@@ -62,15 +69,11 @@ class MainScreenVm @Inject constructor(
         fillListOfApps()
     }
 
-    fun parseAppInfo(a: ApplicationInfo): AppInfo {
+    fun parseBasicAppInfo(a: ApplicationInfo): AppInfo {
         val isSystemApp = (a.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-        val service = UserServiceProvider.getService()
-        val languagePreferences = service.getApplicationLocales(a.packageName)
         val labels = arrayListOf<AppLabels>()
         if (isSystemApp)
             labels.add(AppLabels.SYSTEM_APP)
-        if (!languagePreferences.isEmpty)
-            labels.add(AppLabels.MODIFIED)
         return AppInfo(
             icon = app.packageManager.getAppIcon(a),
             name = app.packageManager.getLabel(a),
@@ -79,22 +82,89 @@ class MainScreenVm @Inject constructor(
         )
     }
 
+    fun parseAppInfo(a: ApplicationInfo): AppInfo {
+        val basicAppInfo = parseBasicAppInfo(a)
+        val service = UserServiceProvider.getService()
+        val languagePreferences = service.getApplicationLocales(a.packageName)
+        val labels = basicAppInfo.labels.toMutableList()
+        if (!languagePreferences.isEmpty)
+            labels.add(AppLabels.MODIFIED)
+        return basicAppInfo.copy(labels = labels)
+    }
+
     fun fillListOfApps() {
+        localeScanJob?.cancel()
         viewModelScope.launch(Dispatchers.IO) {
             if (_uiState.value.operationMode == OperationMode.NONE)
                 loadOperationMode()
-            val packageList = getInstalledPackages().map { parseAppInfo(it) }
-            var sortedList =
-                packageList.sortedBy { it.name.lowercase() }.sortedBy { !it.isModified() }
+            val packages = getInstalledPackages()
+            val basicList = packages.map { parseBasicAppInfo(it) }
+                .sortedBy { it.name.lowercase() }
+            replaceAppLists(basicList)
+            withContext(Dispatchers.Main) {
+                _uiState.update { it.copy(isLoading = false) }
+            }
+            scanLanguageStates(packages)
+        }
+    }
+
+    private fun scanLanguageStates(packages: List<ApplicationInfo>) {
+        localeScanJob = viewModelScope.launch(Dispatchers.IO) {
+            val service = runCatching { UserServiceProvider.getService() }.getOrNull() ?: return@launch
+            val modifiedPackages = mutableSetOf<String>()
+            var scannedCount = 0
+
+            for (packageInfo in packages) {
+                val languagePreferences = runCatching {
+                    service.getApplicationLocales(packageInfo.packageName)
+                }.getOrNull()
+
+                if (languagePreferences?.isEmpty == false) {
+                    modifiedPackages.add(packageInfo.packageName)
+                }
+
+                scannedCount++
+                if (scannedCount % LOCALE_SCAN_BATCH_SIZE == 0) {
+                    applyLanguageScanResult(modifiedPackages, resort = false)
+                }
+            }
+
+            applyLanguageScanResult(modifiedPackages, resort = true)
+        }
+    }
+
+    private suspend fun applyLanguageScanResult(modifiedPackages: Set<String>, resort: Boolean) {
+        withContext(Dispatchers.Main) {
+            val updatedList = _uiState.value.listOfApps.map { appInfo ->
+                val labels = appInfo.labels.toMutableList()
+                val isModified = appInfo.pkg in modifiedPackages
+                if (isModified && !labels.contains(AppLabels.MODIFIED)) {
+                    labels.add(AppLabels.MODIFIED)
+                } else if (!isModified) {
+                    labels.remove(AppLabels.MODIFIED)
+                }
+                appInfo.copy(labels = labels)
+            }.let { list ->
+                if (resort) {
+                    list.sortedBy { it.name.lowercase() }.sortedBy { !it.isModified() }
+                } else {
+                    list
+                }
+            }
+            replaceAppLists(updatedList)
+        }
+    }
+
+    private suspend fun replaceAppLists(apps: List<AppInfo>) {
+        withContext(Dispatchers.Main) {
             _uiState.value.listOfApps.clear()
-            _uiState.value.listOfApps.addAll(sortedList)
+            _uiState.value.listOfApps.addAll(apps)
             if (_uiState.value.searchTextFieldValue.isBlank()) {
                 _uiState.value.searchResults.clear()
-                _uiState.value.searchResults.addAll(sortedList)
+                _uiState.value.searchResults.addAll(apps)
             } else {
                 launchSearch(_uiState.value.searchTextFieldValue, debounce = false)
             }
-            _uiState.update { it.copy(isLoading = false) }
         }
     }
 
@@ -116,6 +186,9 @@ class MainScreenVm @Inject constructor(
 
     fun toggleSystemAppsVisibility() {
         val newShowSystemApps = !uiState.value.isShowSystemAppsHome
+        sharedPreferences.edit()
+            .putBoolean(PREF_SHOW_SYSTEM_APPS_HOME, newShowSystemApps)
+            .apply()
         _uiState.update {
             it.copy(
                 isLoading = true,
@@ -134,6 +207,8 @@ class MainScreenVm @Inject constructor(
 
     companion object {
         private const val SEARCH_DEBOUNCE_MS = 300L
+        private const val LOCALE_SCAN_BATCH_SIZE = 20
+        private const val PREF_SHOW_SYSTEM_APPS_HOME = "show_system_apps_home"
     }
 
     fun onSearchTextFieldChange(newText: String) {

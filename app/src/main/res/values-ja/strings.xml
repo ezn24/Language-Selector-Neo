@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name" translatable="false">Language Selector</string>
+    <string name="app_name" translatable="false">Language Selector Neo</string>
     <string name="app_language">アプリの言語</string>
     <string name="system_default">システムのデフォルト</string>
     <string name="user_languages">ユーザー言語:</string>
