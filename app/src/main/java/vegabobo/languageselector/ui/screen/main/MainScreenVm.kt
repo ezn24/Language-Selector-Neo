@@ -112,30 +112,55 @@ class MainScreenVm @Inject constructor(
         localeScanJob = viewModelScope.launch(Dispatchers.IO) {
             val service = runCatching { UserServiceProvider.getService() }.getOrNull() ?: return@launch
             val modifiedPackages = mutableSetOf<String>()
+            val pendingModifiedPackages = mutableSetOf<String>()
             var scannedCount = 0
+            var lastUiUpdateAt = 0L
 
             for (packageInfo in packages) {
                 val languagePreferences = runCatching {
                     service.getApplicationLocales(packageInfo.packageName)
                 }.getOrNull()
 
-                if (languagePreferences?.isEmpty == false) {
-                    modifiedPackages.add(packageInfo.packageName)
+                if (languagePreferences?.isEmpty == false && modifiedPackages.add(packageInfo.packageName)) {
+                    pendingModifiedPackages.add(packageInfo.packageName)
                 }
 
                 scannedCount++
-                if (scannedCount % LOCALE_SCAN_BATCH_SIZE == 0) {
-                    applyLanguageScanResult(modifiedPackages, resort = false)
+                val now = System.currentTimeMillis()
+                if (pendingModifiedPackages.isNotEmpty() &&
+                    scannedCount % LOCALE_SCAN_BATCH_SIZE == 0 &&
+                    now - lastUiUpdateAt >= LOCALE_SCAN_UPDATE_MIN_INTERVAL_MS
+                ) {
+                    applyLanguageScanDelta(pendingModifiedPackages.toSet())
+                    pendingModifiedPackages.clear()
+                    lastUiUpdateAt = now
+                }
+
+                if (scannedCount % LOCALE_SCAN_COOPERATIVE_YIELD_SIZE == 0) {
+                    delay(1)
                 }
             }
 
-            applyLanguageScanResult(modifiedPackages, resort = true)
+            if (pendingModifiedPackages.isNotEmpty()) {
+                applyLanguageScanDelta(pendingModifiedPackages)
+            }
+            applyLanguageScanFinalSort(modifiedPackages)
         }
     }
 
-    private suspend fun applyLanguageScanResult(modifiedPackages: Set<String>, resort: Boolean) {
+    private suspend fun applyLanguageScanDelta(newModifiedPackages: Set<String>) {
         withContext(Dispatchers.Main) {
-            val updatedList = _uiState.value.listOfApps.map { appInfo ->
+            updateModifiedLabelsInPlace(_uiState.value.listOfApps, newModifiedPackages)
+            updateModifiedLabelsInPlace(_uiState.value.searchResults, newModifiedPackages)
+        }
+    }
+
+    private suspend fun applyLanguageScanFinalSort(modifiedPackages: Set<String>) {
+        val appsSnapshot = withContext(Dispatchers.Main) {
+            _uiState.value.listOfApps.toList()
+        }
+        val sortedApps = withContext(Dispatchers.Default) {
+            appsSnapshot.map { appInfo ->
                 val labels = appInfo.labels.toMutableList()
                 val isModified = appInfo.pkg in modifiedPackages
                 if (isModified && !labels.contains(AppLabels.MODIFIED)) {
@@ -144,14 +169,21 @@ class MainScreenVm @Inject constructor(
                     labels.remove(AppLabels.MODIFIED)
                 }
                 appInfo.copy(labels = labels)
-            }.let { list ->
-                if (resort) {
-                    list.sortedBy { it.name.lowercase() }.sortedBy { !it.isModified() }
-                } else {
-                    list
-                }
+            }.sortedWith(
+                compareByDescending<AppInfo> { it.isModified() }
+                    .thenBy { it.name.lowercase() }
+            )
+        }
+        replaceAppLists(sortedApps)
+    }
+
+    private fun updateModifiedLabelsInPlace(apps: MutableList<AppInfo>, modifiedPackages: Set<String>) {
+        for (index in apps.indices) {
+            val appInfo = apps[index]
+            if (appInfo.pkg !in modifiedPackages || appInfo.isModified()) {
+                continue
             }
-            replaceAppLists(updatedList)
+            apps[index] = appInfo.copy(labels = appInfo.labels + AppLabels.MODIFIED)
         }
     }
 
@@ -207,7 +239,9 @@ class MainScreenVm @Inject constructor(
 
     companion object {
         private const val SEARCH_DEBOUNCE_MS = 300L
-        private const val LOCALE_SCAN_BATCH_SIZE = 20
+        private const val LOCALE_SCAN_BATCH_SIZE = 80
+        private const val LOCALE_SCAN_UPDATE_MIN_INTERVAL_MS = 500L
+        private const val LOCALE_SCAN_COOPERATIVE_YIELD_SIZE = 40
         private const val PREF_SHOW_SYSTEM_APPS_HOME = "show_system_apps_home"
     }
 
