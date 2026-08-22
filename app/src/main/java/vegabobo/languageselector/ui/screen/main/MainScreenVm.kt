@@ -17,11 +17,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import rikka.shizuku.Shizuku
 import vegabobo.languageselector.BuildConfig
 import vegabobo.languageselector.RootReceivedListener
 import vegabobo.languageselector.dao.AppInfoDb
 import vegabobo.languageselector.service.UserServiceProvider
+import java.io.File
 import javax.inject.Inject
 
 
@@ -40,6 +43,18 @@ class MainScreenVm @Inject constructor(
     var lastSelectedApp: AppInfo? = null
     val dao = appInfoDb.appInfoDao()
     private var localeScanJob: Job? = null
+    private val shizukuPermissionResultListener =
+        Shizuku.OnRequestPermissionResultListener { _, grantResult ->
+            _uiState.update {
+                it.copy(
+                    operationMode = if (grantResult == PackageManager.PERMISSION_GRANTED) {
+                        OperationMode.SHIZUKU
+                    } else {
+                        OperationMode.NONE
+                    }
+                )
+            }
+        }
 
     fun getIndexFromAppInfoItem(): Int {
         return _uiState.value.listOfApps.indexOfFirst { it.pkg == lastSelectedApp?.pkg }
@@ -66,7 +81,13 @@ class MainScreenVm @Inject constructor(
     }
 
     init {
+        Shizuku.addRequestPermissionResultListener(shizukuPermissionResultListener)
         fillListOfApps()
+    }
+
+    override fun onCleared() {
+        Shizuku.removeRequestPermissionResultListener(shizukuPermissionResultListener)
+        super.onCleared()
     }
 
     fun parseBasicAppInfo(a: ApplicationInfo): AppInfo {
@@ -75,10 +96,10 @@ class MainScreenVm @Inject constructor(
         if (isSystemApp)
             labels.add(AppLabels.SYSTEM_APP)
         return AppInfo(
-            icon = app.packageManager.getAppIcon(a),
             name = app.packageManager.getLabel(a),
             pkg = a.packageName,
-            labels = labels
+            labels = labels,
+            iconVersion = runCatching { File(a.sourceDir).lastModified() }.getOrDefault(0L),
         )
     }
 
@@ -95,14 +116,32 @@ class MainScreenVm @Inject constructor(
     fun fillListOfApps() {
         localeScanJob?.cancel()
         viewModelScope.launch(Dispatchers.IO) {
-            if (_uiState.value.operationMode == OperationMode.NONE)
+            val cachedApps = loadCachedAppList()
+            val showedCachedApps = displayCachedAppList(cachedApps)
+            val cachedModifiedPackages = cachedApps
+                .filter { it.isModified() }
+                .mapTo(mutableSetOf()) { it.pkg }
+            if (_uiState.value.operationMode == OperationMode.CHECKING)
                 loadOperationMode()
             val packages = getInstalledPackages()
-            val basicList = packages.map { parseBasicAppInfo(it) }
-                .sortedBy { it.name.lowercase() }
+            val basicList = packages.map { packageInfo ->
+                parseBasicAppInfo(packageInfo).let { appInfo ->
+                    if (appInfo.pkg in cachedModifiedPackages) {
+                        appInfo.copy(labels = appInfo.labels + AppLabels.MODIFIED)
+                    } else {
+                        appInfo
+                    }
+                }
+            }.sortedWith(
+                compareByDescending<AppInfo> { it.isModified() }
+                    .thenBy { it.name.lowercase() }
+            )
             replaceAppLists(basicList)
-            withContext(Dispatchers.Main) {
-                _uiState.update { it.copy(isLoading = false) }
+            saveCachedAppList(basicList)
+            if (!showedCachedApps) {
+                withContext(Dispatchers.Main) {
+                    _uiState.update { it.copy(isLoading = false) }
+                }
             }
             scanLanguageStates(packages)
         }
@@ -175,6 +214,61 @@ class MainScreenVm @Inject constructor(
             )
         }
         replaceAppLists(sortedApps)
+        saveCachedAppList(sortedApps)
+    }
+
+    private suspend fun displayCachedAppList(cachedApps: List<AppInfo>): Boolean {
+        if (cachedApps.isEmpty()) {
+            return false
+        }
+        replaceAppLists(cachedApps)
+        withContext(Dispatchers.Main) {
+            _uiState.update { it.copy(isLoading = false) }
+        }
+        return true
+    }
+
+    private fun loadCachedAppList(): List<AppInfo> {
+        val raw = sharedPreferences.getString(PREF_APP_LIST_CACHE, null) ?: return emptyList()
+        return runCatching {
+            val array = JSONArray(raw)
+            val apps = ArrayList<AppInfo>(array.length())
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val pkg = item.optString("pkg")
+                if (pkg.isBlank() || pkg == BuildConfig.APPLICATION_ID) continue
+
+                val labels = arrayListOf<AppLabels>()
+                if (item.optBoolean("system", false)) labels.add(AppLabels.SYSTEM_APP)
+                if (item.optBoolean("modified", false)) labels.add(AppLabels.MODIFIED)
+                apps.add(
+                    AppInfo(
+                        name = item.optString("name", pkg),
+                        pkg = pkg,
+                        labels = labels,
+                        iconVersion = item.optLong("iconVersion", 0L),
+                    )
+                )
+            }
+            apps
+        }.getOrDefault(emptyList())
+    }
+
+    private fun saveCachedAppList(apps: List<AppInfo>) {
+        val array = JSONArray()
+        for (appInfo in apps) {
+            array.put(
+                JSONObject()
+                    .put("pkg", appInfo.pkg)
+                    .put("name", appInfo.name)
+                    .put("system", appInfo.isSystemApp())
+                    .put("modified", appInfo.isModified())
+                    .put("iconVersion", appInfo.iconVersion)
+            )
+        }
+        sharedPreferences.edit()
+            .putString(PREF_APP_LIST_CACHE, array.toString())
+            .apply()
     }
 
     private fun updateModifiedLabelsInPlace(apps: MutableList<AppInfo>, modifiedPackages: Set<String>) {
@@ -243,6 +337,7 @@ class MainScreenVm @Inject constructor(
         private const val LOCALE_SCAN_UPDATE_MIN_INTERVAL_MS = 500L
         private const val LOCALE_SCAN_COOPERATIVE_YIELD_SIZE = 40
         private const val PREF_SHOW_SYSTEM_APPS_HOME = "show_system_apps_home"
+        private const val PREF_APP_LIST_CACHE = "app_list_cache"
     }
 
     fun onSearchTextFieldChange(newText: String) {

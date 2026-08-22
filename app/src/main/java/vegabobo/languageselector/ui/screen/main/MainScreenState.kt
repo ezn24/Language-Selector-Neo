@@ -7,7 +7,7 @@ import androidx.compose.runtime.mutableStateListOf
 import vegabobo.languageselector.dao.AppInfoEntity
 
 enum class OperationMode {
-    NONE, SHIZUKU, ROOT
+    CHECKING, NONE, SHIZUKU, ROOT
 }
 
 enum class SnackBarDisplay {
@@ -18,7 +18,7 @@ data class MainScreenState(
     val listOfApps: MutableList<AppInfo> = mutableStateListOf(),
     val history: MutableList<AppInfo> = mutableStateListOf(),
     val searchResults: MutableList<AppInfo> = mutableStateListOf(),
-    val operationMode: OperationMode = OperationMode.NONE,
+    val operationMode: OperationMode = OperationMode.CHECKING,
     val isDropdownVisible: Boolean = false,
     val isAboutDialogVisible: Boolean = false,
     val isLoading: Boolean = true,
@@ -36,10 +36,10 @@ enum class AppLabels {
 }
 
 data class AppInfo(
-    val icon: Drawable,
     val name: String,
     val pkg: String,
-    val labels: List<AppLabels> = emptyList()
+    val labels: List<AppLabels> = emptyList(),
+    val iconVersion: Long = 0L,
 ) {
     fun isSystemApp() = labels.contains(AppLabels.SYSTEM_APP)
     fun isModified() = labels.contains(AppLabels.MODIFIED)
@@ -54,5 +54,5 @@ fun PackageManager.getLabel(applicationInfo: ApplicationInfo): String {
 }
 
 fun PackageManager.getAppIcon(applicationInfo: ApplicationInfo): Drawable {
-    return this.getApplicationIcon(applicationInfo)
+    return getApplicationIcon(applicationInfo)
 }

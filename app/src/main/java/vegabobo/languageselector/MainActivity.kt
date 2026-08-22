@@ -45,6 +45,7 @@ class MainActivity : ComponentActivity(), Shizuku.OnRequestPermissionResultListe
     }
 
     val acRequestCode = 1
+    private var hasRequestedShizukuPermission = false
 
     fun bindShizuku() {
         Shizuku.bindUserService(ShizukuArgs.userServiceArgs, UserServiceProvider.connection)
@@ -57,28 +58,29 @@ class MainActivity : ComponentActivity(), Shizuku.OnRequestPermissionResultListe
             bindShizuku()
     }
 
-    private fun checkPermission(code: Int): Boolean {
-        return if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
-            bindShizuku()
-            true
-        } else if (Shizuku.shouldShowRequestPermissionRationale()) {
-            false
-        } else {
-            Shizuku.requestPermission(code)
-            false
+    private fun requestShizukuPermissionIfNeeded() {
+        if (!Shizuku.pingBinder()) {
+            return
         }
+        if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
+            bindShizuku()
+            return
+        }
+        if (hasRequestedShizukuPermission || Shizuku.shouldShowRequestPermissionRationale()) {
+            return
+        }
+        hasRequestedShizukuPermission = true
+        Shizuku.requestPermission(acRequestCode)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        hasRequestedShizukuPermission =
+            savedInstanceState?.getBoolean(STATE_SHIZUKU_PERMISSION_REQUESTED) ?: false
+        Shizuku.addRequestPermissionResultListener(REQUEST_PERMISSION_RESULT_LISTENER)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContent {
             LanguageSelector { Navigation() }
-        }
-
-        if (Shizuku.pingBinder() && savedInstanceState == null) {
-            Shizuku.addRequestPermissionResultListener(REQUEST_PERMISSION_RESULT_LISTENER)
-            checkPermission(acRequestCode)
         }
 
         RootReceivedListener.setListener(object : IRootListener {
@@ -100,6 +102,20 @@ class MainActivity : ComponentActivity(), Shizuku.OnRequestPermissionResultListe
         }
     }
 
+    override fun onPostResume() {
+        super.onPostResume()
+        window.decorView.post {
+            if (!isFinishing && !isDestroyed) {
+                requestShizukuPermissionIfNeeded()
+            }
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean(STATE_SHIZUKU_PERMISSION_REQUESTED, hasRequestedShizukuPermission)
+        super.onSaveInstanceState(outState)
+    }
+
     override fun onDestroy() {
         Shizuku.removeRequestPermissionResultListener(REQUEST_PERMISSION_RESULT_LISTENER)
         RootReceivedListener.destroy()
@@ -116,6 +132,11 @@ class MainActivity : ComponentActivity(), Shizuku.OnRequestPermissionResultListe
             }
         }
         super.onDestroy()
+    }
+
+    companion object {
+        private const val STATE_SHIZUKU_PERMISSION_REQUESTED =
+            "shizuku_permission_requested"
     }
 
 }
