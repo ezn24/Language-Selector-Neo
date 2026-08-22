@@ -14,8 +14,8 @@ android {
         applicationId = "io.github.ezn24.languageselector"
         minSdk = 33
         targetSdk = 35
-        versionCode = 110
-        versionName = "1.1.0"
+        versionCode = 111
+        versionName = "1.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
