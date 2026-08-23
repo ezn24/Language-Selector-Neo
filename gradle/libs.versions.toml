@@ -1,5 +1,5 @@
 [versions]
-aboutlibraries = "15.0.4"
+aboutlibraries = "15.1.0"
 libsu = "6.0.0"
 hiddenapibypass = "6.1"
 hilt = "2.60.1"
