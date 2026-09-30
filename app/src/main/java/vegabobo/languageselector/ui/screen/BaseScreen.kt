@@ -22,6 +22,7 @@ fun BaseScreen(
     modifier: Modifier = Modifier,
     title: String? = null,
     snackBarHost: SnackbarHostState = SnackbarHostState(),
+    snackBarHostModifier: Modifier = Modifier,
     topBar: (@Composable (TopAppBarScrollBehavior) -> Unit)? = null,
     navIcon: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
@@ -45,7 +46,12 @@ fun BaseScreen(
             .fillMaxSize()
             .then(sbMod)
             .then(modifier),
-        snackbarHost = { SnackbarHost(hostState = snackBarHost) },
+        snackbarHost = {
+            SnackbarHost(
+                hostState = snackBarHost,
+                modifier = snackBarHostModifier,
+            )
+        },
         topBar = {
             if (topBar != null) {
                 topBar(scrollBehavior!!)

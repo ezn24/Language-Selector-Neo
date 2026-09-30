@@ -83,7 +83,10 @@ fun MainScreen(
             mainScreenVm.resetSnackBarDisplay()
         }
     }
-    BaseScreen(snackBarHost = sb) {
+    BaseScreen(
+        snackBarHost = sb,
+        snackBarHostModifier = Modifier.padding(bottom = 96.dp),
+    ) {
         if (uiState.isLoading)
             Box(modifier = Modifier.fillMaxSize()) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
