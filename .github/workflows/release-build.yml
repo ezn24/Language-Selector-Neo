@@ -7,8 +7,6 @@ on:
       - 'README.md'
       - '.github/**'
   workflow_dispatch:
-  release:
-    types: [published]
 
 # Prevent duplicate runs for the same branch or tag.
 concurrency:
@@ -48,8 +46,8 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Bump patch version for main app updates
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[skip ci]') }}
+      - name: Bump patch version for main releases
+        if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !contains(github.event.head_commit.message, '[skip ci]'))) }}
         run: |
           python3 - <<'PY'
           import re
@@ -104,6 +102,7 @@ jobs:
           echo "RELEASE_TAG=v$VERSION_NAME" >> $GITHUB_ENV
 
       - name: Publish APK to GitHub Release
+        if: ${{ github.ref == 'refs/heads/main' }}
         uses: ncipollo/release-action@v1
         with:
           tag: ${{ env.RELEASE_TAG }}
@@ -111,6 +110,6 @@ jobs:
           commit: ${{ env.RELEASE_COMMIT }}
           artifacts: app/build/outputs/apk/release/*.apk
           artifactContentType: application/vnd.android.package-archive
-          allowUpdates: true
-          replacesArtifacts: true
+          allowUpdates: false
+          replacesArtifacts: false
           makeLatest: true

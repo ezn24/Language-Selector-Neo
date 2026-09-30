@@ -2,7 +2,7 @@ name: Dependabot auto-merge
 
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
 
 permissions:
@@ -13,7 +13,7 @@ permissions:
 jobs:
   auto-merge:
     runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]' || github.event_name == 'workflow_dispatch'
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.pull_request.user.login == 'dependabot[bot]' && github.event.action != 'closed') }}
 
     steps:
       - name: Enable auto-merge for Dependabot PRs
@@ -29,7 +29,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Trigger APK build
+  release-after-merge:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'pull_request_target' && github.event.action == 'closed' && github.event.pull_request.merged == true && github.event.pull_request.user.login == 'dependabot[bot]' }}
+
+    steps:
+      - name: Trigger patch release after Dependabot merge
         run: |
           gh workflow run "Build and Publish APK on Updates" \
             --repo "$GITHUB_REPOSITORY" \

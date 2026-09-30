@@ -18,7 +18,7 @@ Language Selector Neo is useful on Android 13+ ROMs that still include Android's
 | Area | What Neo improves |
 | --- | --- |
 | 🚀 Speed | Shows the basic app list first, then scans language status in the background. |
-| 🔎 Search | Faster searching, with Enter submitting the query instead of adding a new line. |
+| 🔎 Search | A floating bottom search bar follows the keyboard and filters the app list in place. Enter submits the query instead of adding a new line. |
 | 🏷️ App status | Marks apps as `User`, `System`, or `Modified`. |
 | 📌 Pinned languages | Long-press favorite languages to keep them at the top and reuse them in the QS tile. |
 | 🧩 System apps | Show or hide system apps with a remembered toggle. |
@@ -30,6 +30,7 @@ Language Selector Neo is useful on Android 13+ ROMs that still include Android's
 - Change the language of a specific app without changing the whole system language.
 - Reset an app back to the system default language.
 - Keep modified apps easy to find.
+- Search without covering the app list or switching to a separate full-screen view.
 - Use a Quick Settings tile to cycle the current foreground app through pinned languages.
 
 ## ✅ Requirements
