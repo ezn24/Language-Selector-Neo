@@ -1,7 +1,7 @@
 [versions]
-aboutlibraries = "15.2.0"
+aboutlibraries = "15.3.0"
 libsu = "6.0.0"
-hiddenapibypass = "6.1"
+hiddenapibypass = "6.2"
 hilt = "2.60.1"
 hilt-navigation-compose = "1.4.0"
 material-icons-extended = "1.7.8"
