@@ -7,14 +7,46 @@ on:
       - 'README.md'
       - '.github/**'
   workflow_dispatch:
+  schedule:
+    # Monday 06:15 Hong Kong time, after both Dependabot schedules.
+    - cron: '15 22 * * 0'
 
 # Prevent duplicate runs for the same branch or tag.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
+  pending-dependencies:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      found: ${{ steps.scan.outputs.found }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Check for merged Dependabot updates since the latest release
+        id: scan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')
+          git merge-base --is-ancestor "$latest_tag" HEAD
+          update=$(git log --format=%H --max-count=1 --fixed-strings \
+            --grep='Co-authored-by: dependabot[bot] <' \
+            --grep='Signed-off-by: dependabot[bot] <' "$latest_tag..HEAD")
+          if [[ -n "$update" ]]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: pending-dependencies
+    if: ${{ !cancelled() && (github.event_name != 'schedule' || needs.pending-dependencies.outputs.found == 'true') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -47,7 +79,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Bump patch version for main releases
-        if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !contains(github.event.head_commit.message, '[skip ci]'))) }}
+        if: ${{ github.ref == 'refs/heads/main' && (github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')) }}
         run: |
           python3 - <<'PY'
           import re

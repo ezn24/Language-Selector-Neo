@@ -2,42 +2,41 @@ name: Dependabot auto-merge
 
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, closed]
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
   contents: write
   pull-requests: write
-  actions: write
 
 jobs:
   auto-merge:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.pull_request.user.login == 'dependabot[bot]' && github.event.action != 'closed') }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.pull_request.user.login == 'dependabot[bot]' && github.event.pull_request.base.ref == 'main') }}
 
     steps:
-      - name: Enable auto-merge for Dependabot PRs
-        run: |
-          gh pr list \
-            --repo "$GITHUB_REPOSITORY" \
-            --author "dependabot[bot]" \
-            --state open \
-            --json url \
-            --jq '.[].url' | while read pr; do
-              gh pr merge --repo "$GITHUB_REPOSITORY" --auto --squash "$pr"
-            done
+      - name: Merge Dependabot PRs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  release-after-merge:
-    runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request_target' && github.event.action == 'closed' && github.event.pull_request.merged == true && github.event.pull_request.user.login == 'dependabot[bot]' }}
-
-    steps:
-      - name: Trigger patch release after Dependabot merge
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          gh workflow run "Build and Publish APK on Updates" \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref main
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          endpoint="repos/$GITHUB_REPOSITORY/pulls"
+          numbers="$PR_NUMBER"
+          if [[ -z "$numbers" ]]; then
+            numbers=$(gh api --paginate "$endpoint?state=open&base=main&per_page=100" \
+              --jq '.[] | select(.user.login == "dependabot[bot]" and .draft == false) | .number')
+          fi
+
+          failed=0
+          for number in $numbers; do
+            sha=$(gh api "$endpoint/$number" --jq \
+              'select(.state == "open" and .base.ref == "main" and .user.login == "dependabot[bot]" and .draft == false) | .head.sha')
+            [[ -n "$sha" ]] || continue
+            echo "Merging Dependabot PR #$number at $sha"
+            if ! gh api --method PUT "$endpoint/$number/merge" \
+              -f merge_method=squash -f sha="$sha" --jq 'if .merged then .message else error(.message) end'; then
+              echo "::error::Failed to merge Dependabot PR #$number"
+              failed=1
+            fi
+          done
+          exit "$failed"
